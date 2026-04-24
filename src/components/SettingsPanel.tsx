@@ -1,0 +1,240 @@
+import { useState } from 'react';
+import { X } from 'lucide-react';
+import type { BrandingConfig } from '../types';
+import { GOOGLE_FONTS, FONT_LABELS, FONT_SIZE_MAP } from '../constants';
+import { extractFontNameFromUrl, getActiveFontFamily, concentricRadius } from '../utils';
+import { HEADER_PADDING, FOOTER_PADDING } from '../commands';
+
+// Shared input style
+const INPUT: React.CSSProperties = {
+  width:'100%', background:'rgba(73,136,196,0.1)', border:'1px solid rgba(73,136,196,0.22)',
+  borderRadius:7, padding:'7px 10px', color:'#ddeeff', fontSize:13, outline:'none',
+  boxSizing:'border-box', fontFamily:'inherit',
+};
+
+const LABEL: React.CSSProperties = {
+  color:'#5a88aa', fontSize:10, fontWeight:700, textTransform:'uppercase', letterSpacing:'0.7px', marginBottom:5,
+};
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={LABEL}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function ColorRow({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
+  return (
+    <div style={{ marginBottom:14 }}>
+      <div style={LABEL}>{label}</div>
+      <div style={{ display:'flex', gap:7, alignItems:'center' }}>
+        <input type="color" value={value} onChange={e => onChange(e.target.value)}
+          style={{ width:36, height:32, border:'none', borderRadius:6, cursor:'pointer', padding:2, background:'transparent', flexShrink:0 }}/>
+        <input value={value} onChange={e => onChange(e.target.value)}
+          style={{ ...INPUT, fontFamily:'monospace', flex:1 }} placeholder="#000000"/>
+      </div>
+    </div>
+  );
+}
+
+function RadiusRow({ label, value, padding, previewBg, onChange }: {
+  label:     string;
+  value:     number;
+  /** Element's content padding — used to compute outer CSS radius via concentric rule */
+  padding:   number;
+  previewBg: string;
+  onChange:  (v: number) => void;
+}) {
+  const outerRadius = concentricRadius(value, padding);
+
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'baseline', marginBottom:8 }}>
+        <div style={LABEL}>{label}</div>
+        <span style={{ fontSize:10, color:'#4a7890', fontFamily:'monospace' }}>
+          inner {value}px → outer {outerRadius}px
+        </span>
+      </div>
+
+      {/* Preset buttons */}
+      <div style={{ display:'flex', gap:6, marginBottom:8 }}>
+        {[0, 4, 12, 24].map(r => (
+          <button key={r} onClick={() => onChange(r)} style={{
+            flex:1, padding:'5px 0', border:'none', borderRadius:5, cursor:'pointer', fontSize:11, fontWeight:600,
+            background: value===r ? '#1C4D8D' : 'rgba(73,136,196,0.08)',
+            color:      value===r ? '#BDE8F5' : '#6a99bb',
+          }}>{r===0 ? 'None' : r===4 ? 'Slight' : r===12 ? 'Mod' : 'Round'}</button>
+        ))}
+      </div>
+
+      {/* Slider — controls inner radius */}
+      <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+        <input type="range" min={0} max={32} value={value} onChange={e => onChange(Number(e.target.value))}
+          style={{ flex:1, accentColor:'#4988C4' }}/>
+        <span style={{ color:'#ddeeff', fontSize:12, fontFamily:'monospace', minWidth:30, textAlign:'right' }}>{value}px</span>
+      </div>
+
+      {/* Preview swatches — show outer (rendered) radius */}
+      <div style={{ marginTop:8, display:'flex', gap:4 }}>
+        <div style={{ flex:1, height:20, background:previewBg, borderRadius:`${outerRadius}px ${outerRadius}px 0 0`, transition:'border-radius 0.15s' }}/>
+        <div style={{ flex:1, height:20, background:previewBg, borderRadius:`0 0 ${outerRadius}px ${outerRadius}px`, transition:'border-radius 0.15s' }}/>
+      </div>
+    </div>
+  );
+}
+
+type Tab = 'identity' | 'header' | 'footer' | 'body';
+
+export default function SettingsPanel({ branding, onChange, onClose, visible }: {
+  branding: BrandingConfig;
+  onChange: (b: BrandingConfig) => void;
+  onClose:  () => void;
+  visible:  boolean;
+}) {
+  const [tab, setTab] = useState<Tab>('identity');
+  const set = (patch: Partial<BrandingConfig>) => onChange({ ...branding, ...patch });
+
+  const tabs: { id: Tab; label: string }[] = [
+    { id:'identity', label:'Identity' },
+    { id:'header',   label:'Header'   },
+    { id:'footer',   label:'Footer'   },
+    { id:'body',     label:'Body'     },
+  ];
+
+  return (
+    <div style={{
+      position:'fixed', right:0, top:0, bottom:0, zIndex:6000, width:340,
+      background:'#0d1f3a', borderLeft:'1px solid #2a4a6a',
+      transform: visible ? 'translateX(0)' : 'translateX(100%)',
+      transition:'transform 0.25s cubic-bezier(0.4,0,0.2,1)',
+      display:'flex', flexDirection:'column',
+    }}>
+      {/* Header */}
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', padding:'14px 18px', borderBottom:'1px solid #1e3a5a', flexShrink:0 }}>
+        <span style={{ color:'#BDE8F5', fontWeight:700, fontSize:14 }}>Branding & Settings</span>
+        <button onClick={onClose} style={{ background:'none', border:'none', color:'#6a99bb', cursor:'pointer', borderRadius:5, padding:4 }}>
+          <X size={16}/>
+        </button>
+      </div>
+
+      {/* Tabs */}
+      <div style={{ display:'flex', borderBottom:'1px solid #1e3a5a', flexShrink:0 }}>
+        {tabs.map(t => (
+          <button key={t.id} onClick={() => setTab(t.id)} style={{
+            flex:1, padding:'9px 4px', border:'none', cursor:'pointer', fontSize:12, fontWeight:600,
+            background:'transparent',
+            color:       tab===t.id ? '#BDE8F5' : '#4a7a9a',
+            borderBottom:`2px solid ${tab===t.id ? '#4988C4' : 'transparent'}`,
+            transition:'color 0.15s, border-color 0.15s',
+          }}>{t.label}</button>
+        ))}
+      </div>
+
+      {/* Content */}
+      <div style={{ flex:1, overflowY:'auto', padding:18 }}>
+
+        {/* ── IDENTITY ─────────────────────────────────────── */}
+        {tab === 'identity' && <>
+          <Field label="Company Name">
+            <input value={branding.companyName} onChange={e => set({ companyName:e.target.value })} style={INPUT} placeholder="Acme Corp"/>
+          </Field>
+          <Field label="Logo URL">
+            <input value={branding.logoUrl} onChange={e => set({ logoUrl:e.target.value })} style={INPUT} placeholder="https://example.com/logo.png"/>
+          </Field>
+          <ColorRow label="Accent / Primary Color" value={branding.primaryColor} onChange={v => set({ primaryColor:v })}/>
+
+          <div style={{ height:1, background:'#1e3a5a', margin:'16px 0' }}/>
+
+          <Field label="Preset Font">
+            <select value={branding.font} onChange={e => set({ font:e.target.value })} style={{ ...INPUT, cursor:'pointer' }}>
+              {GOOGLE_FONTS.map(f => <option key={f} value={f}>{FONT_LABELS[f]}</option>)}
+            </select>
+          </Field>
+          <Field label="Custom Google Font URL">
+            <>
+              <input value={branding.customFontUrl}
+                onChange={e => {
+                  const url  = e.target.value;
+                  const name = extractFontNameFromUrl(url);
+                  set({ customFontUrl:url, customFontName:name });
+                }}
+                style={INPUT} placeholder="https://fonts.googleapis.com/css2?family=..."/>
+              {branding.customFontName && <div style={{ marginTop:5, fontSize:11, color:'#4d9a6e' }}>✓ Detected: {branding.customFontName}</div>}
+              {branding.customFontUrl && !branding.customFontName && <div style={{ marginTop:5, fontSize:11, color:'#d4904a' }}>Could not detect font name — enter it below</div>}
+            </>
+          </Field>
+          <Field label="Custom Font Name (override)">
+            <input value={branding.customFontName} onChange={e => set({ customFontName:e.target.value })} style={INPUT} placeholder="e.g. Roboto Condensed"/>
+          </Field>
+
+          <div style={{ height:1, background:'#1e3a5a', margin:'16px 0' }}/>
+
+          <Field label="Font Size">
+            <div style={{ display:'flex', gap:6 }}>
+              {(['small','medium','large'] as const).map(s => (
+                <button key={s} onClick={() => set({ fontSize:s })} style={{
+                  flex:1, padding:'7px 0', border:'none', borderRadius:6, cursor:'pointer',
+                  background: branding.fontSize===s ? '#1C4D8D' : 'rgba(73,136,196,0.08)',
+                  color:      branding.fontSize===s ? '#BDE8F5' : '#6a99bb',
+                  fontSize:12, fontWeight:600, textTransform:'capitalize',
+                }}>{s}</button>
+              ))}
+            </div>
+          </Field>
+
+          {/* Swatch preview */}
+          <div style={{ marginTop:16, padding:12, background:'rgba(73,136,196,0.07)', borderRadius:8, border:'1px solid rgba(73,136,196,0.18)' }}>
+            <div style={{ ...LABEL, marginBottom:8 }}>Preview</div>
+            <div style={{ background:branding.primaryColor, color:'#fff', padding:'7px 14px', borderRadius:6, fontSize:13, fontWeight:600, textAlign:'center', marginBottom:6 }}>
+              {branding.companyName || 'Your Company'}
+            </div>
+            <div style={{ fontSize:11, color:'#4a7890' }}>
+              {getActiveFontFamily(branding)} · {branding.fontSize} · {FONT_SIZE_MAP[branding.fontSize]}
+            </div>
+          </div>
+        </>}
+
+        {/* ── HEADER ───────────────────────────────────────── */}
+        {tab === 'header' && <>
+          <ColorRow label="Background Color" value={branding.headerBg} onChange={v => set({ headerBg:v })}/>
+          <ColorRow label="Text Color"        value={branding.headerText} onChange={v => set({ headerText:v })}/>
+          <RadiusRow label="Corner Radius" value={branding.headerRadius} padding={HEADER_PADDING} previewBg={branding.headerBg} onChange={v => set({ headerRadius:v })}/>
+          {/* Live preview */}
+          <div style={{ marginTop:12, borderRadius:`${concentricRadius(branding.headerRadius, HEADER_PADDING)}px ${concentricRadius(branding.headerRadius, HEADER_PADDING)}px 0 0`, background:branding.headerBg, padding:16, textAlign:'center', transition:'all 0.15s' }}>
+            <div style={{ color:branding.headerText, fontSize:14, fontWeight:700 }}>{branding.companyName || 'Your Company'}</div>
+            <div style={{ color:branding.headerText, fontSize:11, opacity:0.6, marginTop:2 }}>Header preview</div>
+          </div>
+        </>}
+
+        {/* ── FOOTER ───────────────────────────────────────── */}
+        {tab === 'footer' && <>
+          <ColorRow label="Background Color" value={branding.footerBg} onChange={v => set({ footerBg:v })}/>
+          <ColorRow label="Text Color"        value={branding.footerText} onChange={v => set({ footerText:v })}/>
+          <RadiusRow label="Corner Radius" value={branding.footerRadius} padding={FOOTER_PADDING} previewBg={branding.footerBg} onChange={v => set({ footerRadius:v })}/>
+          {/* Live preview */}
+          <div style={{ marginTop:12, borderRadius:`0 0 ${concentricRadius(branding.footerRadius, FOOTER_PADDING)}px ${concentricRadius(branding.footerRadius, FOOTER_PADDING)}px`, background:branding.footerBg, padding:'12px 16px', textAlign:'center', transition:'all 0.15s' }}>
+            <div style={{ color:branding.footerText, fontSize:12 }}>© {new Date().getFullYear()} {branding.companyName || 'Your Company'}</div>
+            <div style={{ color:branding.footerText, fontSize:10, opacity:0.5, marginTop:3 }}>Built with MailForge by Eternum</div>
+          </div>
+        </>}
+
+        {/* ── BODY ─────────────────────────────────────────── */}
+        {tab === 'body' && <>
+          <ColorRow label="Background Color" value={branding.bodyBg}   onChange={v => set({ bodyBg:v })}/>
+          <ColorRow label="Text Color"        value={branding.bodyText} onChange={v => set({ bodyText:v })}/>
+          <ColorRow label="Link Color"        value={branding.linkColor} onChange={v => set({ linkColor:v })}/>
+          <div style={{ marginTop:12, background:branding.bodyBg, borderRadius:8, padding:16, border:'1px solid rgba(73,136,196,0.18)', transition:'all 0.15s' }}>
+            <div style={{ color:branding.bodyText, fontSize:15, fontWeight:700, marginBottom:6 }}>Body preview</div>
+            <div style={{ color:branding.bodyText, fontSize:13, lineHeight:1.6, marginBottom:8 }}>
+              Paragraph text with an <a href="#" style={{ color:branding.linkColor, textDecoration:'underline' }} onClick={e => e.preventDefault()}>inline link</a>.
+            </div>
+            <div style={{ fontSize:12, color:branding.bodyText, opacity:0.6 }}>Font size: {FONT_SIZE_MAP[branding.fontSize]}</div>
+          </div>
+        </>}
+
+      </div>
+    </div>
+  );
+}

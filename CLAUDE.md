@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # OhMyMail — Claude Context
 
 ## What this project is
@@ -42,12 +43,74 @@ interface SlashCommandDef { name: string; description: string; icon: ReactNode; 
 | `mailforge_title` | Email title string |
 | `mailforge_templates` | JSON array of `Template` |
 | `mailforge_branding` | JSON object of `BrandingConfig` |
+=======
+# CLAUDE.md
+
+## Project
+
+OhMyMail — a markdown-to-email editor. React 19 + TypeScript + Vite + Tailwind CSS 4.
+
+Package manager: **Bun** (`bun.lock` is present; use `bun` for all install/run commands).
+>>>>>>> 71e0477 (chore: add README, CLAUDE.md, and Husky conventional commits setup)
 
 ## Commands
 
 ```bash
+<<<<<<< HEAD
 bun dev          # dev server at localhost:5173
 bun run build    # tsc -b && vite build
 bun run lint     # eslint .
 bun preview      # preview production build
+=======
+bun dev           # start dev server
+bun run build     # tsc -b && vite build
+bun run lint      # eslint
+bun run preview   # preview production build
+```
+
+## Architecture
+
+```
+src/
+├── App.tsx              # root component — layout, editor, preview, state
+├── commands.tsx         # slash command definitions (built-in + custom tag commands)
+├── types.ts             # shared TypeScript interfaces
+├── constants.ts         # storage keys, font list, icon list, defaults
+├── utils.ts             # storage helpers, download, HTML export, font loading
+├── hooks.ts             # autosave, mobile detection, drag-resize, toasts, templates
+├── config/
+│   └── app.config.ts   # app name, github, DEFAULT_BRANDING, CUSTOM_TAG_COMMANDS
+└── components/
+    ├── ExportMenu.tsx
+    ├── IconPickerModal.tsx
+    ├── SettingsPanel.tsx
+    ├── SlashPalette.tsx
+    ├── TemplatesModal.tsx
+    └── ToastList.tsx
+```
+
+## Key Conventions
+
+- **All customization** (branding defaults, custom slash commands) lives in `src/config/app.config.ts` — keep business logic out of config.
+- **localStorage keys** are defined in `constants.ts` (`STORAGE_KEYS`). Never hardcode keys elsewhere.
+- **Email HTML export** is built in `utils.ts` (`buildEmailHtml`). The output must be self-contained (no external CSS links except Google Fonts).
+- **`<lucide-icon name="..."/>`** is a custom tag replaced at render time; see `utils.ts` `replaceLucideIcons`.
+- Tailwind 4 — use `@tailwindcss/vite` plugin; no `tailwind.config.js` required.
+- No test suite currently. Prefer manual verification in the live preview.
+
+## Commits
+
+This project uses **Conventional Commits** enforced by Husky + commitlint.
+
+Format: `type(scope): description`
+
+Common types: `feat`, `fix`, `chore`, `refactor`, `style`, `docs`, `test`, `perf`
+
+Examples:
+```
+feat(commands): add table slash command
+fix(export): correct font-face injection for custom fonts
+chore: upgrade marked to v19
+docs: update README keyboard shortcuts
+>>>>>>> 71e0477 (chore: add README, CLAUDE.md, and Husky conventional commits setup)
 ```
