@@ -1,4 +1,4 @@
-# MailForge
+# OhMyMail
 
 A professional email template composer with live preview, Markdown editing, and full branding customization. All data stays local — no backend required.
 
