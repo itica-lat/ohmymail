@@ -1,0 +1,27 @@
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+#root {
+  width: 100%;
+  max-width: 100%;
+  margin: 0;
+  text-align: left;
+  border: none;
+  min-height: 100vh;
+  display: block;
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(77, 136, 196, 0.4); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(77, 136, 196, 0.7); }
+
+@media print {
+  body { overflow: visible; }
+  #root { overflow: visible; }
+}
