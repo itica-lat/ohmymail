@@ -1,75 +1,78 @@
-# React + TypeScript + Vite
+# MailForge
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A professional email template composer with live preview, Markdown editing, and full branding customization. All data stays local — no backend required.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **Split-pane editor** — Markdown on the left, rendered email preview on the right, with a draggable divider
+- **Slash commands** — Type `/` to insert headings, buttons, dividers, badges, links, images, headers, footers, and more with fuzzy search
+- **Branding panel** — Set company name, logo, colors, fonts (Google Fonts supported), and corner radii for header/footer/body
+- **Template management** — Save, load, duplicate, rename, and delete named templates (stored in localStorage)
+- **Export** — Download as self-contained HTML, raw Markdown, or PDF (browser print)
+- **Auto-save** — Drafts persist automatically to localStorage
 
-## React Compiler
+## Tech Stack
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+- React 19 + TypeScript
+- Vite 8 with React Compiler
+- Tailwind CSS v4
+- `marked` for Markdown-to-HTML conversion
+- `lucide-react` for icons
+- Oxc-based linting (ESLint + oxlint)
 
-Note: This will impact Vite dev & build performances.
+## Getting Started
 
-## Expanding the ESLint configuration
+```bash
+# Install dependencies (uses Bun)
+bun install
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+# Start dev server
+bun dev
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
+# Build for production
+bun run build
 
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+# Preview production build
+bun preview
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Dev server runs at `http://localhost:5173` by default.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Keyboard Shortcuts
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
-```
+| Shortcut | Action |
+|---|---|
+| `Ctrl+S` | Save as template |
+| `Ctrl+Shift+E` | Export HTML |
+| `Ctrl+P` | Export PDF (print dialog) |
+| `Tab` | Insert 2-space indent in editor |
+
+## Slash Commands
+
+Type `/` in the editor to open the command palette. Available commands:
+
+| Command | Inserts |
+|---|---|
+| `/h1`, `/h2`, `/h3` | Headings |
+| `/button` | Call-to-action button |
+| `/divider` | Horizontal rule |
+| `/badge` | Inline badge/label |
+| `/link` | Hyperlink |
+| `/image` | Image block |
+| `/gif` | Animated GIF |
+| `/icon` | Inline icon (with picker) |
+| `/header` | Email header block |
+| `/footer` | Email footer block |
+| `/branding` | Company branding block |
+| `/font` | Font override |
+
+## Storage
+
+All data is persisted to `localStorage` under these keys:
+
+| Key | Contents |
+|---|---|
+| `mailforge_autosave` | Current editor content |
+| `mailforge_title` | Current email title |
+| `mailforge_templates` | Saved templates (JSON array) |
+| `mailforge_branding` | Branding configuration (JSON) |
