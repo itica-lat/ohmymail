@@ -43,12 +43,21 @@ function renderHeader(block: HeaderBlock): string {
   const img = block.logoUrl
     ? `<img src="${block.logoUrl}" alt="Logo" style="height:${block.height}px;display:block;margin:0 auto;" />`
     : '';
-  return `<div style="background:${block.bg};padding:24px;text-align:${block.align};border-radius:${block.radius};">${img}</div>`;
+  // Use min() so radius never exceeds a sane fraction of the element height (responsive)
+  const radius = block.radius.includes('min(') ? block.radius : `min(${block.radius}, ${Math.round(block.height / 2)}px)`;
+  return `<div style="background:${block.bg};padding:24px;text-align:${block.align};border-radius:${radius};">${img}</div>`;
 }
 
 function renderFooter(block: FooterBlock): string {
-  const html = String(marked.parse(block.text));
-  return `<div style="background:${block.bg};color:${block.textColor};padding:16px 24px;text-align:center;font-size:12px;">${html}</div>`;
+  // Inject inline color on <p>/<a> tags so CSS class rules (like .mf-b p) cannot override them
+  const html = String(marked.parse(block.text))
+    .replace(/<p>/g, `<p style="margin:4px 0;color:${block.textColor};">`)
+    .replace(/<a /g, `<a style="color:${block.textColor};" `);
+  const radius = (block as FooterBlock & { radius?: string }).radius
+    ? `border-radius:${(block as FooterBlock & { radius?: string }).radius};`
+    : '';
+  const align = (block as FooterBlock & { align?: string }).align ?? 'center';
+  return `<div style="background:${block.bg};color:${block.textColor};padding:16px 24px;text-align:${align};font-size:12px;${radius}">${html}</div>`;
 }
 
 function renderBadge(block: BadgeBlock): string {
