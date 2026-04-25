@@ -5,6 +5,7 @@
 export interface Template {
   id: string;
   name: string;
+  /** Serialized block array (JSON string) or legacy markdown string */
   content: string;
   createdAt: number;
   updatedAt: number;
@@ -69,3 +70,139 @@ export interface CustomTagCommand {
   /** Default inner text inserted with the command */
   placeholder: string;
 }
+
+// ============================================================
+// Block ADT
+// ============================================================
+
+export type BlockId = string; // nanoid(8)
+
+export type MarkdownBlock = {
+  id: BlockId;
+  type: 'markdown';
+  content: string;
+};
+
+export type HeaderBlock = {
+  id: BlockId;
+  type: 'header';
+  logoUrl: string;
+  bg: string;
+  height: number;
+  radius: string;
+  align: 'left' | 'center' | 'right';
+};
+
+export type FooterBlock = {
+  id: BlockId;
+  type: 'footer';
+  bg: string;
+  text: string;
+  textColor: string;
+};
+
+export type BadgeBlock = {
+  id: BlockId;
+  type: 'badge';
+  label: string;
+  color: string;
+  bg: string;
+  radius: string;
+  fontSize: string;
+};
+
+export type DividerBlock = {
+  id: BlockId;
+  type: 'divider';
+  color: string;
+  thickness: number;
+  margin: string;
+};
+
+export type ImageBlock = {
+  id: BlockId;
+  type: 'image';
+  src: string;
+  alt: string;
+  width: string;
+  align: 'left' | 'center' | 'right';
+  radius: string;
+};
+
+export type ButtonBlock = {
+  id: BlockId;
+  type: 'button';
+  label: string;
+  href: string;
+  bg: string;
+  color: string;
+  radius: string;
+  fontSize: string;
+};
+
+export type IconBlock = {
+  id: BlockId;
+  type: 'icon';
+  name: string;
+  size: number;
+  color: string;
+  align: 'left' | 'center' | 'right';
+};
+
+export type FontBlock = {
+  id: BlockId;
+  type: 'font';
+  family: string;
+  url: string;
+  target: 'h1' | 'h2' | 'h3' | 'body' | 'footer' | 'all';
+  size: string;
+  weight: string;
+};
+
+export type SpacerBlock = {
+  id: BlockId;
+  type: 'spacer';
+  height: number;
+};
+
+export type ColumnsBlock = {
+  id: BlockId;
+  type: 'columns';
+  left: InlineBlock[];
+  right: InlineBlock[];
+  gap: string;
+  leftWidth: string;
+};
+
+export type SocialLink = {
+  platform: 'twitter' | 'linkedin' | 'instagram' | 'github' | 'youtube' | 'tiktok';
+  url: string;
+};
+
+export type SocialBlock = {
+  id: BlockId;
+  type: 'social';
+  links: SocialLink[];
+  iconSize: number;
+  color: string;
+  align: 'left' | 'center' | 'right';
+};
+
+/** Blocks allowed inside columns (no nesting columns/social/font/spacer) */
+export type InlineBlock = MarkdownBlock | BadgeBlock | ImageBlock | IconBlock | ButtonBlock;
+
+export type Block =
+  | MarkdownBlock
+  | HeaderBlock
+  | FooterBlock
+  | BadgeBlock
+  | DividerBlock
+  | ImageBlock
+  | ButtonBlock
+  | IconBlock
+  | FontBlock
+  | SpacerBlock
+  | ColumnsBlock
+  | SocialBlock;
+
+export type BlockType = Block['type'];
