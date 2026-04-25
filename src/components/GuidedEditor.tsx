@@ -41,7 +41,7 @@ function makeBlock(type: BlockType, branding: BrandingConfig): Block {
   switch (type) {
     case 'markdown': return { id, type, content: 'Type your **markdown** here.' };
     case 'header':   return { id, type, logoUrl: branding.logoUrl, bg: branding.headerBg, height: 80, radius: '1rem', align: 'center' };
-    case 'footer':   return { id, type, bg: branding.footerBg, text: `© ${new Date().getFullYear()} ${branding.companyName || 'Your Company'}`, textColor: branding.footerText };
+    case 'footer':   return { id, type, bg: branding.footerBg, text: `© ${new Date().getFullYear()} ${branding.companyName || 'Your Company'}`, textColor: branding.footerText, radius: '0', align: 'center' as const };
     case 'badge':    return { id, type, label: 'Badge', color: '#1D4ED8', bg: '#EFF6FF', radius: '999px', fontSize: '12px' };
     case 'divider':  return { id, type, color: 'rgba(0,0,0,0.1)', thickness: 1, margin: '24px 0' };
     case 'image':    return { id, type, src: 'https://placehold.co/600x200', alt: 'Image', width: '100%', align: 'center', radius: '0' };
@@ -130,15 +130,26 @@ function AddBlockButton({ afterId, branding, onAdd }: { afterId?: BlockId; brand
 
 // ── Block preview renderers ───────────────────────────────────
 
-function BlockPreview({ block, branding }: { block: Block; branding: BrandingConfig }) {
+function BlockPreview({ block, expanded, onToggleExpand }: { block: Block; expanded?: boolean; onToggleExpand?: () => void }) {
   switch (block.type) {
     case 'markdown': {
       const html = String(marked.parse(block.content));
+      const isLong = block.content.length > 180;
       return (
-        <div
-          style={{ fontSize: 13, color: branding.bodyText, pointerEvents: 'none', maxHeight: 120, overflow: 'hidden', lineHeight: 1.6 }}
-          dangerouslySetInnerHTML={{ __html: html }}
-        />
+        <div>
+          <div
+            style={{ fontSize: 13, color: '#c8dff5', pointerEvents: 'none', maxHeight: expanded ? 'none' : 100, overflow: 'hidden', lineHeight: 1.6 }}
+            dangerouslySetInnerHTML={{ __html: html }}
+          />
+          {isLong && (
+            <button
+              onClick={e => { e.stopPropagation(); onToggleExpand?.(); }}
+              style={{ marginTop: 4, padding: '1px 8px', fontSize: 11, background: 'rgba(73,136,196,0.12)', border: '1px solid rgba(73,136,196,0.3)', borderRadius: 4, color: '#4988C4', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              {expanded ? '↑ Collapse' : '↓ Show more'}
+            </button>
+          )}
+        </div>
       );
     }
     case 'header':
@@ -151,7 +162,7 @@ function BlockPreview({ block, branding }: { block: Block; branding: BrandingCon
       );
     case 'footer':
       return (
-        <div style={{ background: block.bg, color: block.textColor, padding: '8px 12px', textAlign: 'center', fontSize: 11 }}>
+        <div style={{ background: block.bg, color: block.textColor, padding: '8px 12px', textAlign: block.align ?? 'center', fontSize: 11, borderRadius: block.radius ?? '0' }}>
           {block.text || '(footer)'}
         </div>
       );
@@ -282,9 +293,11 @@ function BlockPropEditor({ block, update }: { block: Block; update: (patch: Part
     case 'footer': {
       const b = block as FooterBlock;
       return (<>
-        <ColorField   label="Background" value={b.bg}        onChange={v => update({ bg: v })} />
-        <ColorField   label="Text color" value={b.textColor} onChange={v => update({ textColor: v })} />
-        <TextareaField label="Text (md)"  value={b.text}     onChange={v => update({ text: v })} />
+        <ColorField   label="Background" value={b.bg}           onChange={v => update({ bg: v })} />
+        <ColorField   label="Text color" value={b.textColor}    onChange={v => update({ textColor: v })} />
+        <TextField    label="Radius"     value={b.radius ?? '0'} onChange={v => update({ radius: v })} />
+        <SelectField<'left' | 'center' | 'right'> label="Align" value={b.align ?? 'center'} options={['left', 'center', 'right']} onChange={v => update({ align: v })} />
+        <TextareaField label="Text (md)"  value={b.text}        onChange={v => update({ text: v })} />
       </>);
     }
     case 'badge': {
@@ -414,6 +427,7 @@ function SortableCard({
   onAddAfter: (b: Block) => void;
 }) {
   const [editing, setEditing] = useState(false);
+  const [markdownExpanded, setMarkdownExpanded] = useState(false);
 
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({ id: block.id });
   const style: React.CSSProperties = {
@@ -421,6 +435,8 @@ function SortableCard({
     transition,
     opacity: isDragging ? 0.4 : 1,
   };
+
+  const isFooter = block.type === 'footer';
 
   return (
     <div ref={setNodeRef} style={style}>
@@ -445,7 +461,11 @@ function SortableCard({
 
         {/* Visual preview */}
         <div style={{ padding: '10px 16px', minHeight: 32 }}>
-          <BlockPreview block={block} branding={branding}/>
+          <BlockPreview
+            block={block}
+            expanded={markdownExpanded}
+            onToggleExpand={() => setMarkdownExpanded(e => !e)}
+          />
         </div>
 
         {/* Inline prop editor */}
@@ -456,8 +476,10 @@ function SortableCard({
         )}
       </div>
 
-      {/* Add block between cards */}
-      <AddBlockButton afterId={block.id} branding={branding} onAdd={(b) => onAddAfter(b)} />
+      {/* Add block between cards — hidden after footer (footer must stay last) */}
+      {!isFooter && (
+        <AddBlockButton afterId={block.id} branding={branding} onAdd={(b) => onAddAfter(b)} />
+      )}
     </div>
   );
 }
@@ -478,7 +500,21 @@ export default function GuidedEditor({ blocks, branding, slashCommands, onBlocks
     const oldIdx = blocks.findIndex(b => b.id === active.id);
     const newIdx = blocks.findIndex(b => b.id === over.id);
     if (oldIdx === -1 || newIdx === -1) return;
-    onBlocksChange(arrayMove(blocks, oldIdx, newIdx));
+
+    const moved = arrayMove(blocks, oldIdx, newIdx);
+    // Enforce header stays first: if header ends up not-first, move it back
+    const headerIdx = moved.findIndex(b => b.type === 'header');
+    if (headerIdx !== -1 && headerIdx !== 0) {
+      const header = moved.splice(headerIdx, 1)[0];
+      moved.unshift(header);
+    }
+    // Enforce footer stays last
+    const footerIdx = moved.findIndex(b => b.type === 'footer');
+    if (footerIdx !== -1 && footerIdx !== moved.length - 1) {
+      const footer = moved.splice(footerIdx, 1)[0];
+      moved.push(footer);
+    }
+    onBlocksChange(moved);
   };
 
   // Slash command insertion for the top-level "Add block" area
@@ -500,6 +536,11 @@ export default function GuidedEditor({ blocks, branding, slashCommands, onBlocks
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '16px 20px' }}>
+        {/* Only allow inserting above the first block if it is NOT a header */}
+        {blocks[0]?.type !== 'header' && (
+          <AddBlockButton branding={branding} onAdd={b => onBlocksChange([b, ...blocks])} />
+        )}
+
         <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
           <SortableContext items={blocks.map(b => b.id)} strategy={verticalListSortingStrategy}>
             {blocks.map(block => (
@@ -515,13 +556,11 @@ export default function GuidedEditor({ blocks, branding, slashCommands, onBlocks
           </SortableContext>
         </DndContext>
 
-        {/* Add block at the top when empty, or always show at bottom */}
         {blocks.length === 0 && (
           <div style={{ textAlign: 'center', padding: '40px 20px', color: '#2a4a6a', fontSize: 13 }}>
-            No blocks yet. Add your first block below.
+            No blocks yet. Add your first block above.
           </div>
         )}
-        <AddBlockButton branding={branding} onAdd={b => addBlock(b)} />
       </div>
 
       {slashState && (
