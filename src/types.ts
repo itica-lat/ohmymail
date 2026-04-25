@@ -99,6 +99,8 @@ export type FooterBlock = {
   bg: string;
   text: string;
   textColor: string;
+  radius?: string;
+  align?: 'left' | 'center' | 'right';
 };
 
 export type BadgeBlock = {
