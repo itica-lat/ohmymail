@@ -2,10 +2,12 @@
 // Static constants — no side effects, no dependencies
 // ============================================================
 
-export const AUTOSAVE_KEY  = 'mailforge_autosave';
-export const TEMPLATES_KEY = 'mailforge_templates';
-export const BRANDING_KEY  = 'mailforge_branding';
-export const TITLE_KEY     = 'mailforge_title';
+export const AUTOSAVE_KEY   = 'mailforge_autosave';
+export const TEMPLATES_KEY  = 'mailforge_templates';
+export const BRANDING_KEY   = 'mailforge_branding';
+export const TITLE_KEY      = 'mailforge_title';
+export const BLOCKS_KEY     = 'mailforge_blocks';
+export const EDITOR_MODE_KEY = 'mailforge_editor_mode';
 
 export const GOOGLE_FONTS = [
   'Inter', 'Lato', 'Poppins', 'Raleway', 'Merriweather',
