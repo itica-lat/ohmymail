@@ -1,26 +1,28 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { marked } from 'marked';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
-  Mail, Check, ExternalLink, Code, Eye, GripVertical,
+  Mail, Check, ExternalLink, GripVertical,
   Plus, FolderOpen, Save, Layers, Download, ChevronDown, Settings2,
 } from 'lucide-react';
 
 import { APP_CONFIG, DEFAULT_BRANDING } from './config/app.config';
 import type { BrandingConfig, SlashCommandDef, SlashCommandState, Template } from './types';
-import { AUTOSAVE_KEY, BRANDING_KEY, DEFAULT_CONTENT, FONT_SIZE_MAP, TITLE_KEY } from './constants';
+import { BRANDING_KEY, BLOCKS_KEY, TITLE_KEY, DEFAULT_CONTENT } from './constants';
 import {
   getFromStorage, setToStorage, getActiveFontFamily, getActiveFontUrl,
-  getCaretCoordinates, processPreviewHtml, downloadFile, buildExportHtml, fuzzyMatch,
+  downloadFile,
 } from './utils';
-import { useAutosave, useMobile, useDragResize, useToasts, useTemplates } from './hooks';
+import { deserializeBlocks } from './utils/blockSerializer';
+import { renderBlocksToPreviewHtml, renderBlocksToEmailHtml, inlineEmailStyles } from './utils/blockRenderer';
+import { useToasts, useMobile, useDragResize, useTemplates, useBlocks, useEditorMode } from './hooks';
 import { buildSlashCommands } from './commands';
 
-import ToastList       from './components/ToastList';
-import SlashPalette    from './components/SlashPalette';
-import IconPickerModal from './components/IconPickerModal';
-import TemplatesModal  from './components/TemplatesModal';
-import SettingsPanel   from './components/SettingsPanel';
-import ExportMenu      from './components/ExportMenu';
+import ToastList        from './components/ToastList';
+import IconPickerModal  from './components/IconPickerModal';
+import TemplatesModal   from './components/TemplatesModal';
+import SettingsPanel    from './components/SettingsPanel';
+import ExportMenu       from './components/ExportMenu';
+import PureEditor       from './components/PureEditor';
+import GuidedEditor     from './components/GuidedEditor';
 
 // ── Shared button styles ──────────────────────────────────────
 const IBTN: React.CSSProperties = {
@@ -40,9 +42,8 @@ const tbtn = (active = false): React.CSSProperties => ({
 // Main component
 // ============================================================
 
-export default function MailForge() {
+export default function OhMyMail() {
   // ── State ─────────────────────────────────────────────────
-  const [content,            setContent]            = useState('');
   const [title,              setTitle]              = useState('Untitled Email');
   const [editingTitle,       setEditingTitle]       = useState(false);
   const [branding,           setBranding]           = useState<BrandingConfig>(() => ({
@@ -55,49 +56,62 @@ export default function MailForge() {
   const [showExportMenu,     setShowExportMenu]     = useState(false);
   const [showIconPicker,     setShowIconPicker]     = useState(false);
   const [templateDropdown,   setTemplateDropdown]   = useState(false);
-  const [slashState,         setSlashState]         = useState<SlashCommandState | null>(null);
+
+  // Unused state kept for slash-palette in legacy flow; individual editors manage their own
+  const [_slashState, _setSlashState]              = useState<SlashCommandState | null>(null);
+  void _slashState; void _setSlashState;
+
+  const manualTitle = { current: false };
 
   // ── Hooks ─────────────────────────────────────────────────
   const { toasts, addToast, dismissToast }                                               = useToasts();
   const { templates, saveTemplate, deleteTemplate, duplicateTemplate, renameTemplate }   = useTemplates();
-  const { status: saveStatus, savedAgo }                                                 = useAutosave(content, title);
   const isMobile                                                                         = useMobile();
   const { paneWidth, onDragStart }                                                       = useDragResize();
-
-  // ── Refs ──────────────────────────────────────────────────
-  const textareaRef       = useRef<HTMLTextAreaElement>(null);
-  const lineNumRef        = useRef<HTMLDivElement>(null);
-  const pendingIconInsert = useRef<{ startIndex: number } | null>(null);
-  const manualTitle       = useRef(false);
+  const { blocks, setBlocks, addBlock, removeBlock, updateBlock }                       = useBlocks();
+  const { editorMode, setEditorMode }                                                   = useEditorMode();
 
   // ── Derived values ────────────────────────────────────────
   const slashCommands = useMemo(() => buildSlashCommands(branding), [branding]);
 
-  const previewHtml = useMemo(() => {
-    const raw = marked.parse(content);
-    return processPreviewHtml(typeof raw === 'string' ? raw : String(raw), branding);
-  }, [content, branding]);
+  const previewHtml = useMemo(
+    () => renderBlocksToPreviewHtml(blocks, branding),
+    [blocks, branding],
+  );
 
-  const wordCount = useMemo(() => (content.trim() ? content.trim().split(/\s+/).length : 0), [content]);
-
-  const saveLabel = saveStatus === 'unsaved'
-    ? 'Unsaved changes'
-    : savedAgo < 5 ? 'Saved just now' : `Saved ${savedAgo}s ago`;
+  const wordCount = useMemo(() => {
+    const text = blocks.map(b => b.type === 'markdown' ? b.content : '').join(' ');
+    return text.trim() ? text.trim().split(/\s+/).length : 0;
+  }, [blocks]);
 
   // ── Initialisation ────────────────────────────────────────
   useEffect(() => {
-    const saved = getFromStorage<string | null>(AUTOSAVE_KEY, null);
-    setContent(saved ?? DEFAULT_CONTENT);
-    setTitle(getFromStorage(TITLE_KEY, 'Untitled Email'));
-    if (saved) addToast('Draft restored', 'info');
+    const savedTitle = getFromStorage(TITLE_KEY, '');
+    if (savedTitle) setTitle(savedTitle);
+
+    // If no blocks saved yet, load default content
+    const blocksRaw = localStorage.getItem(BLOCKS_KEY);
+    if (!blocksRaw) {
+      setBlocks(deserializeBlocks(DEFAULT_CONTENT));
+      addToast('Welcome to OhMyMail!', 'info');
+    } else {
+      addToast('Draft restored', 'info');
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Auto-title from first # heading
+  // Auto-title from first heading in markdown blocks
   useEffect(() => {
     if (manualTitle.current) return;
-    const match = content.match(/^#\s+(.+)$/m);
-    if (match) setTitle(match[1].trim());
-  }, [content]);
+    for (const b of blocks) {
+      if (b.type === 'markdown') {
+        const match = b.content.match(/^#\s+(.+)$/m);
+        if (match) { setTitle(match[1].trim()); break; }
+      }
+    }
+  }, [blocks]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Persist title
+  useEffect(() => { setToStorage(TITLE_KEY, title); }, [title]);
 
   // ── Font injection ────────────────────────────────────────
   useEffect(() => {
@@ -124,9 +138,9 @@ export default function MailForge() {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
-      if (e.key === 's')                                         { e.preventDefault(); handleSaveAsTemplate(); }
-      if (e.shiftKey && (e.key === 'E' || e.key === 'e'))       { e.preventDefault(); handleExportHtml(); }
-      if (e.key === 'p')                                         { e.preventDefault(); handleExportPdf(); }
+      if (e.key === 's')                                   { e.preventDefault(); handleSaveAsTemplate(); }
+      if (e.shiftKey && (e.key === 'E' || e.key === 'e')) { e.preventDefault(); handleExportHtml(); }
+      if (e.key === 'p')                                   { e.preventDefault(); handleExportPdf(); }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
@@ -143,112 +157,44 @@ export default function MailForge() {
     return () => window.removeEventListener('mousedown', fn);
   }, []);
 
-  // ── Editor helpers ────────────────────────────────────────
-  const syncLineScroll = useCallback(() => {
-    if (textareaRef.current && lineNumRef.current)
-      lineNumRef.current.scrollTop = textareaRef.current.scrollTop;
-  }, []);
-
-  // ── Slash command insertion ───────────────────────────────
-  const insertCommand = useCallback((cmd: SlashCommandDef, state: SlashCommandState) => {
-    if (cmd.special === 'icon-picker') {
-      pendingIconInsert.current = { startIndex: state.startIndex };
-      setSlashState(null);
-      setShowIconPicker(true);
-      return;
-    }
-    const ta = textareaRef.current;
-    if (!ta) return;
-    const text = cmd.insert(branding);
-    const next = `${content.slice(0, state.startIndex)}${text}\n${content.slice(ta.selectionStart)}`;
-    setContent(next);
-    setSlashState(null);
-    requestAnimationFrame(() => {
-      const pos = state.startIndex + text.length + 1;
-      ta.selectionStart = ta.selectionEnd = pos;
-      ta.focus();
-    });
-  }, [branding, content]);
-
-  const handleIconPicked = useCallback((iconName: string) => {
-    setShowIconPicker(false);
-    const ta = textareaRef.current;
-    if (!ta || !pendingIconInsert.current) return;
-    const { startIndex } = pendingIconInsert.current;
-    const text = `<lucide-icon name="${iconName}" />`;
-    setContent(`${content.slice(0, startIndex)}${text}${content.slice(ta.selectionStart)}`);
-    pendingIconInsert.current = null;
-    requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = startIndex + text.length; ta.focus(); });
-  }, [content]);
-
-  // ── Editor change / key handlers ──────────────────────────
-  const handleChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const val = e.target.value;
-    const pos = e.target.selectionStart;
-    setContent(val);
-
-    const before     = val.slice(0, pos);
-    const lastSlash  = before.lastIndexOf('/');
-    if (lastSlash !== -1) {
-      const prev        = lastSlash > 0 ? before[lastSlash - 1] : '\n';
-      const atWordStart = ['\n', ' ', '\t'].includes(prev) || lastSlash === 0;
-      const query       = before.slice(lastSlash + 1);
-      if (atWordStart && !query.includes('\n') && query.length <= 20) {
-        const taRect = e.target.getBoundingClientRect();
-        const caret  = getCaretCoordinates(e.target, lastSlash);
-        setSlashState({ query, startIndex:lastSlash, x:taRect.left + caret.left, y:taRect.top + caret.top - e.target.scrollTop + caret.height, selectedIndex:0 });
-        return;
-      }
-    }
-    setSlashState(null);
-  }, []);
-
-  const handleKeyDown = useCallback((e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (slashState) {
-      const filtered = slashCommands.filter(c => fuzzyMatch(slashState.query, `${c.label} ${c.description}`)).slice(0, 8);
-      const total    = Math.max(filtered.length, 1);
-      if (e.key === 'ArrowDown') { e.preventDefault(); setSlashState(s => s ? { ...s, selectedIndex:(s.selectedIndex + 1) % total }             : null); return; }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); setSlashState(s => s ? { ...s, selectedIndex:(s.selectedIndex - 1 + total) % total }      : null); return; }
-      if (e.key === 'Enter')     { e.preventDefault(); const cmd = filtered[slashState.selectedIndex]; if (cmd) insertCommand(cmd, slashState); return; }
-      if (e.key === 'Escape')    { e.preventDefault(); setSlashState(null); return; }
-    }
-    if (e.key === 'Tab') {
-      e.preventDefault();
-      const ta = textareaRef.current;
-      if (!ta) return;
-      const s = ta.selectionStart;
-      setContent(content.slice(0, s) + '  ' + content.slice(ta.selectionEnd));
-      requestAnimationFrame(() => { ta.selectionStart = ta.selectionEnd = s + 2; });
-    }
-  }, [slashState, slashCommands, content, insertCommand]);
-
   // ── Template handlers ─────────────────────────────────────
   const handleSaveAsTemplate = useCallback(() => {
     const name = window.prompt('Template name:', title);
     if (!name?.trim()) return;
-    saveTemplate(name.trim(), content);
+    // Store as JSON-serialized blocks
+    saveTemplate(name.trim(), JSON.stringify(blocks));
     addToast(`Template "${name.trim()}" saved`, 'success');
-  }, [title, content, saveTemplate, addToast]);
+  }, [title, blocks, saveTemplate, addToast]);
 
   const loadTemplate = useCallback((t: Template) => {
     manualTitle.current = false;
-    setContent(t.content);
+    // Try parsing as Block[] JSON first, fall back to deserializing as markdown
+    try {
+      const parsed = JSON.parse(t.content);
+      if (Array.isArray(parsed)) { setBlocks(parsed); }
+      else { setBlocks(deserializeBlocks(t.content)); }
+    } catch {
+      setBlocks(deserializeBlocks(t.content));
+    }
     setTitle(t.name);
     setShowTemplatesModal(false);
     setTemplateDropdown(false);
     addToast(`"${t.name}" loaded`, 'info');
-  }, [addToast]);
+  }, [addToast, setBlocks]);
 
   // ── Export handlers ───────────────────────────────────────
-  const handleExportHtml = useCallback(() => {
-    downloadFile(buildExportHtml(content, branding, title), 'mailforge-export.html', 'text/html');
+  const handleExportHtml = useCallback(async () => {
+    const raw     = renderBlocksToEmailHtml(blocks, branding, title);
+    const inlined = await inlineEmailStyles(raw);
+    downloadFile(inlined, 'ohmymail-export.html', 'text/html');
     addToast('HTML exported', 'success');
-  }, [content, branding, title, addToast]);
+  }, [blocks, branding, title, addToast]);
 
   const handleExportMd = useCallback(() => {
-    downloadFile(`${content}\n\n<!-- Built with MailForge by Eternum · Apache 2.0 -->\n`, 'mailforge-export.md', 'text/markdown');
+    const mdContent = blocks.map(b => b.type === 'markdown' ? b.content : '').filter(Boolean).join('\n\n');
+    downloadFile(`${mdContent}\n\n<!-- Built with OhMyMail by Itica Lat · Apache 2.0 -->\n`, 'ohmymail-export.md', 'text/markdown');
     addToast('Markdown exported', 'success');
-  }, [content, addToast]);
+  }, [blocks, addToast]);
 
   const handleExportPdf = useCallback(() => {
     const sid = 'mf-print-css';
@@ -262,11 +208,11 @@ export default function MailForge() {
       #mf-print-wm { display:block !important; }
     }`;
     window.print();
-    window.addEventListener('afterprint', () => { if (el) el.textContent = ''; }, { once:true });
+    window.addEventListener('afterprint', () => { if (el) el.textContent = ''; }, { once: true });
   }, []);
 
   const handleLoadFile = useCallback(() => {
-    const input = Object.assign(document.createElement('input'), { type:'file', accept:'.md,.txt' });
+    const input = Object.assign(document.createElement('input'), { type:'file', accept:'.md,.txt,.json' });
     input.onchange = () => {
       const file = input.files?.[0];
       if (!file) return;
@@ -274,7 +220,12 @@ export default function MailForge() {
       reader.onload = ev => {
         const text = ev.target?.result;
         if (typeof text === 'string') {
-          setContent(text);
+          // Try JSON block array first
+          try {
+            const parsed = JSON.parse(text);
+            if (Array.isArray(parsed)) { setBlocks(parsed); setTitle(file.name.replace(/\.(json)$/, '')); addToast(`Loaded: ${file.name}`, 'info'); return; }
+          } catch { /* not JSON */ }
+          setBlocks(deserializeBlocks(text));
           setTitle(file.name.replace(/\.(md|txt)$/, ''));
           addToast(`Loaded: ${file.name}`, 'info');
         }
@@ -282,14 +233,15 @@ export default function MailForge() {
       reader.readAsText(file);
     };
     input.click();
-  }, [addToast]);
+  }, [addToast, setBlocks]);
 
   const handleNewDoc = useCallback(() => {
-    if (content !== DEFAULT_CONTENT && !window.confirm('Start fresh? Unsaved changes will be lost.')) return;
+    if (blocks.length > 0 && !window.confirm('Start fresh? Unsaved changes will be lost.')) return;
     manualTitle.current = false;
-    setContent(DEFAULT_CONTENT);
+    setBlocks(deserializeBlocks(DEFAULT_CONTENT));
+    setTitle('Untitled Email');
     addToast('New document', 'info');
-  }, [content, addToast]);
+  }, [blocks, addToast, setBlocks]);
 
   // ── Render ────────────────────────────────────────────────
   return (
@@ -314,6 +266,16 @@ export default function MailForge() {
           </span>
         </div>
 
+        {/* Mode toggle */}
+        <div style={{ display:'flex', gap:2, background:'rgba(73,136,196,0.1)', borderRadius:7, padding:2, marginLeft:4, flexShrink:0 }}>
+          <button className="mf-tbtn" onClick={() => setEditorMode('guided')} style={tbtn(editorMode === 'guided')} title="Guided mode">
+            <span style={{ fontSize:13 }}>✦</span> Guided
+          </button>
+          <button className="mf-tbtn" onClick={() => setEditorMode('pure')} style={tbtn(editorMode === 'pure')} title="Pure (text) mode">
+            <span style={{ fontSize:13 }}>&lt;/&gt;</span> Pure
+          </button>
+        </div>
+
         {/* Title */}
         <div style={{ flex:1, display:'flex', justifyContent:'center', padding:'0 8px', minWidth:0 }}>
           {editingTitle
@@ -336,9 +298,9 @@ export default function MailForge() {
 
         {/* Actions */}
         <div style={{ display:'flex', alignItems:'center', gap:3, flexShrink:0 }}>
-          <button className="mf-ibtn" onClick={handleNewDoc}          style={IBTN} title="New document"><Plus       size={15}/></button>
-          <button className="mf-ibtn" onClick={handleLoadFile}        style={IBTN} title="Load .md file"><FolderOpen size={15}/></button>
-          <button className="mf-ibtn" onClick={handleSaveAsTemplate}  style={IBTN} title="Save as template (Ctrl+S)"><Save size={15}/></button>
+          <button className="mf-ibtn" onClick={handleNewDoc}         style={IBTN} title="New document"><Plus       size={15}/></button>
+          <button className="mf-ibtn" onClick={handleLoadFile}       style={IBTN} title="Load file"><FolderOpen   size={15}/></button>
+          <button className="mf-ibtn" onClick={handleSaveAsTemplate} style={IBTN} title="Save as template (Ctrl+S)"><Save size={15}/></button>
 
           {/* Templates dropdown */}
           <div style={{ position:'relative', flexShrink:0 }} data-tpl-dropdown>
@@ -376,7 +338,7 @@ export default function MailForge() {
             <button className="mf-tbtn" onClick={() => setShowExportMenu(o => !o)} style={tbtn(showExportMenu)} title="Export options">
               <Download size={14}/><span>Export</span><ChevronDown size={10}/>
             </button>
-            {showExportMenu && <ExportMenu onHtml={handleExportHtml} onMd={handleExportMd} onPdf={handleExportPdf} onClose={() => setShowExportMenu(false)}/>}
+            {showExportMenu && <ExportMenu onHtml={() => { void handleExportHtml(); }} onMd={handleExportMd} onPdf={handleExportPdf} onClose={() => setShowExportMenu(false)}/>}
           </div>
 
           <button className="mf-ibtn" onClick={() => setShowSettings(s => !s)}
@@ -387,8 +349,8 @@ export default function MailForge() {
 
           {isMobile && (
             <div style={{ display:'flex', gap:2, background:'rgba(73,136,196,0.1)', borderRadius:7, padding:2, marginLeft:2 }}>
-              <button className="mf-tbtn" onClick={() => setActiveTab('editor')}  style={tbtn(activeTab==='editor')} ><Code size={13}/></button>
-              <button className="mf-tbtn" onClick={() => setActiveTab('preview')} style={tbtn(activeTab==='preview')}><Eye  size={13}/></button>
+              <button className="mf-tbtn" onClick={() => setActiveTab('editor')}  style={tbtn(activeTab==='editor')}  title="Editor"><span style={{ fontSize:13 }}>✦</span></button>
+              <button className="mf-tbtn" onClick={() => setActiveTab('preview')} style={tbtn(activeTab==='preview')} title="Preview"><span style={{ fontSize:13 }}>👁</span></button>
             </div>
           )}
         </div>
@@ -397,25 +359,26 @@ export default function MailForge() {
       {/* ═══ PANES ════════════════════════════════════════════ */}
       <div id="mf-panes" style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0 }}>
 
-        {/* Editor */}
+        {/* Editor pane */}
         {(!isMobile || activeTab === 'editor') && (
           <div id="mf-editor-pane" style={{ width:isMobile ? '100%' : `${paneWidth}%`, display:'flex', flexDirection:'column', overflow:'hidden', borderRight:isMobile ? 'none' : '1px solid rgba(73,136,196,0.18)', minWidth:0 }}>
-            <div style={{ padding:'5px 12px', background:'#0a1e3d', borderBottom:'1px solid rgba(73,136,196,0.12)', display:'flex', alignItems:'center', gap:7, flexShrink:0 }}>
-              <Code size={12} style={{ color:'#4988C4' }}/>
-              <span style={{ fontSize:11, color:'#6a99bb', fontWeight:700, letterSpacing:'0.5px' }}>EDITOR</span>
-              <span style={{ fontSize:11, color:'#2a4a6a', marginLeft:'auto' }}>/ commands · Tab indent</span>
-            </div>
-            <div style={{ flex:1, display:'flex', overflow:'hidden', minHeight:0, position:'relative' }}>
-              {/* Line numbers */}
-              <div ref={lineNumRef} style={{ width:42, flexShrink:0, overflowY:'hidden', background:'#091830', borderRight:'1px solid rgba(73,136,196,0.1)', color:'#2a4a6a', fontFamily:'"IBM Plex Mono",monospace', fontSize:12, lineHeight:'22px', paddingTop:16, userSelect:'none', textAlign:'right' }}>
-                {content.split('\n').map((_, i) => <div key={i} style={{ paddingRight:8 }}>{i + 1}</div>)}
-              </div>
-              {/* Textarea */}
-              <textarea ref={textareaRef} value={content} onChange={handleChange} onKeyDown={handleKeyDown} onScroll={syncLineScroll}
-                spellCheck={false} aria-label="Markdown editor"
-                style={{ flex:1, resize:'none', border:'none', outline:'none', background:'#0c1d38', color:'#b8d4ee', fontFamily:'"IBM Plex Mono",monospace', fontSize:13, lineHeight:'22px', padding:16, overflowY:'auto', whiteSpace:'pre-wrap', wordWrap:'break-word', tabSize:2 }}
-              />
-            </div>
+            {editorMode === 'pure'
+              ? <PureEditor
+                  blocks={blocks}
+                  branding={branding}
+                  slashCommands={slashCommands as SlashCommandDef[]}
+                  onBlocksChange={setBlocks}
+                />
+              : <GuidedEditor
+                  blocks={blocks}
+                  branding={branding}
+                  slashCommands={slashCommands as SlashCommandDef[]}
+                  onBlocksChange={setBlocks}
+                  updateBlock={updateBlock}
+                  addBlock={addBlock}
+                  removeBlock={removeBlock}
+                />
+            }
           </div>
         )}
 
@@ -434,14 +397,14 @@ export default function MailForge() {
         {(!isMobile || activeTab === 'preview') && (
           <div id="mf-preview-pane" style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden', minWidth:0 }}>
             <div style={{ padding:'5px 12px', background:'#0a1e3d', borderBottom:'1px solid rgba(73,136,196,0.12)', display:'flex', alignItems:'center', gap:7, flexShrink:0 }}>
-              <Eye size={12} style={{ color:'#4988C4' }}/>
+              <span style={{ fontSize:12, color:'#4988C4' }}>👁</span>
               <span style={{ fontSize:11, color:'#6a99bb', fontWeight:700, letterSpacing:'0.5px' }}>PREVIEW</span>
               <span style={{ fontSize:11, color:'#2a4a6a', marginLeft:'auto' }}>600px email frame</span>
             </div>
             <div style={{ flex:1, overflowY:'auto', background:'#091428', padding:'24px 16px' }}>
               <div className="mf-email-frame" style={{ maxWidth:600, margin:'0 auto', background:branding.bodyBg, borderRadius:10, boxShadow:'0 8px 40px rgba(0,0,0,0.45)', overflow:'hidden', minHeight:200 }}>
                 <div
-                  style={{ padding:'28px 36px', fontFamily:`'${getActiveFontFamily(branding)}','Inter',sans-serif`, fontSize:FONT_SIZE_MAP[branding.fontSize], color:branding.bodyText, lineHeight:1.7, background:branding.bodyBg }}
+                  style={{ padding:'28px 36px', fontFamily:`'${getActiveFontFamily(branding)}','Inter',sans-serif`, color:branding.bodyText, lineHeight:1.7, background:branding.bodyBg }}
                   dangerouslySetInnerHTML={{ __html: `
                     <style>
                       .mf-b h1{color:${branding.bodyText};font-size:26px;margin:0 0 16px;font-family:inherit}
@@ -465,7 +428,7 @@ export default function MailForge() {
                   ` }}
                 />
                 <div id="mf-print-wm" style={{ display:'none', padding:'10px 20px', borderTop:'1px solid #e8edf5', textAlign:'center', fontSize:11, color:'#aab8c8', background:'#f8fafc' }}>
-                  Built with MailForge by Eternum · itica-lat · Apache 2.0
+                  Built with OhMyMail by Itica Lat · Apache 2.0
                 </div>
               </div>
             </div>
@@ -475,9 +438,9 @@ export default function MailForge() {
 
       {/* ═══ STATUS BAR ═══════════════════════════════════════ */}
       <footer id="mf-statusbar" style={{ height:26, display:'flex', alignItems:'center', justifyContent:'space-between', padding:'0 14px', background:'#06122a', borderTop:'1px solid rgba(73,136,196,0.18)', flexShrink:0, fontSize:11 }}>
-        <span style={{ color:'#3a5a7a' }}>{wordCount} words · {content.length} chars</span>
-        <span style={{ color:saveStatus==='unsaved' ? '#d4904a' : '#3d9a6a', display:'flex', alignItems:'center', gap:4 }}>
-          {saveStatus==='saved' && <Check size={10}/>}{saveLabel}
+        <span style={{ color:'#3a5a7a' }}>{wordCount} words · {blocks.length} block{blocks.length !== 1 ? 's' : ''}</span>
+        <span style={{ color:'#3d9a6a', display:'flex', alignItems:'center', gap:4 }}>
+          <Check size={10}/> Auto-saved
         </span>
         <a href={APP_CONFIG.github} target="_blank" rel="noopener noreferrer" style={{ color:'#4988C4', textDecoration:'none', display:'flex', alignItems:'center', gap:4 }}>
           <ExternalLink size={10}/> {APP_CONFIG.name}
@@ -485,17 +448,14 @@ export default function MailForge() {
       </footer>
 
       {/* ═══ OVERLAYS ══════════════════════════════════════════ */}
-      {slashState && (
-        <SlashPalette commands={slashCommands} state={slashState} onSelect={cmd => insertCommand(cmd, slashState)}/>
-      )}
       {showIconPicker && (
-        <IconPickerModal onSelect={handleIconPicked} onClose={() => setShowIconPicker(false)}/>
+        <IconPickerModal onSelect={() => setShowIconPicker(false)} onClose={() => setShowIconPicker(false)}/>
       )}
       {showTemplatesModal && (
         <TemplatesModal
           templates={templates}
           onLoad={loadTemplate}
-          onSave={() => { const n = window.prompt('Template name:', title); if (n?.trim()) { saveTemplate(n.trim(), content); addToast(`Template "${n.trim()}" saved`, 'success'); } }}
+          onSave={() => { const n = window.prompt('Template name:', title); if (n?.trim()) { saveTemplate(n.trim(), JSON.stringify(blocks)); addToast(`Template "${n.trim()}" saved`, 'success'); } }}
           onDelete={deleteTemplate}
           onDuplicate={duplicateTemplate}
           onRename={renameTemplate}
