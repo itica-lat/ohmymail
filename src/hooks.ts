@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Template, Toast } from './types';
-import { AUTOSAVE_KEY, TEMPLATES_KEY, TITLE_KEY } from './constants';
+import type { Block, BlockId, Template, Toast } from './types';
+import { AUTOSAVE_KEY, BLOCKS_KEY, EDITOR_MODE_KEY, TEMPLATES_KEY, TITLE_KEY } from './constants';
 import { generateId, getFromStorage, setToStorage } from './utils';
+import { deserializeBlocks } from './utils/blockSerializer';
 
 // ── Autosave ──────────────────────────────────────────────────
 
@@ -133,4 +134,96 @@ export function useTemplates() {
   }, [templates, persist]);
 
   return { templates, saveTemplate, deleteTemplate, duplicateTemplate, renameTemplate };
+}
+
+// ── Block state management ────────────────────────────────────
+
+function loadInitialBlocks(): Block[] {
+  // Try new format first (JSON array stored under BLOCKS_KEY)
+  const raw = localStorage.getItem(BLOCKS_KEY);
+  if (raw) {
+    if (raw.trim().startsWith('[')) {
+      try { return JSON.parse(raw) as Block[]; } catch { /* fall through */ }
+    }
+    // Unlikely but handle plain string migration
+    return deserializeBlocks(raw);
+  }
+
+  // Fall back to legacy autosave key (plain markdown string)
+  const legacy = localStorage.getItem(AUTOSAVE_KEY);
+  if (legacy) {
+    // Remove JSON quotes if it was stored as JSON string
+    const str = (() => {
+      try { const p = JSON.parse(legacy); return typeof p === 'string' ? p : legacy; } catch { return legacy; }
+    })();
+    return deserializeBlocks(str);
+  }
+
+  return [];
+}
+
+type UpdateBlockPatch<T extends Block> = Partial<Omit<T, 'id' | 'type'>>;
+
+export function useBlocks() {
+  const [blocks, setBlocksRaw] = useState<Block[]>(loadInitialBlocks);
+
+  // Persist to localStorage whenever blocks change
+  const setBlocks = useCallback((next: Block[] | ((prev: Block[]) => Block[])) => {
+    setBlocksRaw(prev => {
+      const resolved = typeof next === 'function' ? next(prev) : next;
+      setToStorage(BLOCKS_KEY, resolved);
+      return resolved;
+    });
+  }, []);
+
+  const addBlock = useCallback((block: Block, afterId?: BlockId) => {
+    setBlocks(prev => {
+      if (!afterId) return [...prev, block];
+      const idx = prev.findIndex(b => b.id === afterId);
+      if (idx === -1) return [...prev, block];
+      return [...prev.slice(0, idx + 1), block, ...prev.slice(idx + 1)];
+    });
+  }, [setBlocks]);
+
+  const removeBlock = useCallback((id: BlockId) => {
+    setBlocks(prev => prev.filter(b => b.id !== id));
+  }, [setBlocks]);
+
+  const moveBlock = useCallback((id: BlockId, direction: 'up' | 'down') => {
+    setBlocks(prev => {
+      const idx = prev.findIndex(b => b.id === id);
+      if (idx === -1) return prev;
+      const next = [...prev];
+      const swapIdx = direction === 'up' ? idx - 1 : idx + 1;
+      if (swapIdx < 0 || swapIdx >= next.length) return prev;
+      [next[idx], next[swapIdx]] = [next[swapIdx], next[idx]];
+      return next;
+    });
+  }, [setBlocks]);
+
+  function updateBlock<T extends Block>(id: BlockId, patch: UpdateBlockPatch<T>): void {
+    setBlocks(prev => prev.map(b => {
+      if (b.id !== id) return b;
+      // Spread produces a new object (React Compiler compatible)
+      return { ...b, ...patch } as Block;
+    }));
+  }
+
+  return { blocks, setBlocks, addBlock, removeBlock, moveBlock, updateBlock };
+}
+
+// ── Editor mode ───────────────────────────────────────────────
+
+export function useEditorMode() {
+  const [editorMode, setEditorModeRaw] = useState<'pure' | 'guided'>(() => {
+    const saved = localStorage.getItem(EDITOR_MODE_KEY);
+    return (saved === 'pure' || saved === 'guided') ? saved : 'guided';
+  });
+
+  const setEditorMode = useCallback((mode: 'pure' | 'guided') => {
+    setEditorModeRaw(mode);
+    localStorage.setItem(EDITOR_MODE_KEY, mode);
+  }, []);
+
+  return { editorMode, setEditorMode };
 }
