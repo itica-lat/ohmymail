@@ -23,7 +23,6 @@ import type {
 } from '../types';
 import { fuzzyMatch } from '../utils';
 import SlashPalette from './SlashPalette';
-import { useT } from '../lib/i18n';
 
 interface Props {
   blocks: Block[];
